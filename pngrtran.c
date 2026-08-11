@@ -479,6 +479,20 @@ png_set_quantize(png_struct *png_ptr, png_color *palette,
    if (palette == NULL)
       return;
 
+   /* Validate the palette length.  A PNG palette can hold at most
+    * PNG_MAX_PALETTE_LENGTH entries, and the internal arrays and the owned
+    * copy of the palette are sized accordingly.  Reject out-of-range counts
+    * instead of silently truncating them, so that the copies and index arrays
+    * below cannot be accessed out of bounds (png_set_PLTE and png_set_hIST
+    * perform a similar check on their palette counts).
+    */
+   if (num_palette <= 0 || num_palette > (int)PNG_MAX_PALETTE_LENGTH ||
+       maximum_colors <= 0)
+   {
+      png_warning(png_ptr, "Ignoring invalid palette length in png_set_quantize");
+      return;
+   }
+
    png_ptr->transformations |= PNG_QUANTIZE;
 
    if (full_quantize == 0)
