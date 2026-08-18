@@ -479,17 +479,18 @@ png_set_quantize(png_struct *png_ptr, png_color *palette,
    if (palette == NULL)
       return;
 
-   /* Validate the palette length.  A PNG palette can hold at most
-    * PNG_MAX_PALETTE_LENGTH entries, and the internal arrays and the owned
-    * copy of the palette are sized accordingly.  Reject out-of-range counts
-    * instead of silently truncating them, so that the copies and index arrays
-    * below cannot be accessed out of bounds (png_set_PLTE and png_set_hIST
-    * perform a similar check on their palette counts).
+   /* Validate the palette counts.  A palette larger than maximum_colors is
+    * valid and is reduced below, but num_palette must be positive,
+    * maximum_colors must be positive, and the reduced palette cannot exceed
+    * PNG_MAX_PALETTE_LENGTH entries, because the quantized output is an 8-bit
+    * palette.  Reject invalid values as an application error instead of
+    * silently skipping the transform, so that the application does not
+    * assume the palette mapping has been set up.
     */
-   if (num_palette <= 0 || num_palette > (int)PNG_MAX_PALETTE_LENGTH ||
-       maximum_colors <= 0)
+   if (num_palette <= 0 || maximum_colors <= 0 ||
+       maximum_colors > PNG_MAX_PALETTE_LENGTH)
    {
-      png_warning(png_ptr, "Ignoring invalid palette length in png_set_quantize");
+      png_app_error(png_ptr, "Invalid palette length in png_set_quantize");
       return;
    }
 
@@ -498,21 +499,25 @@ png_set_quantize(png_struct *png_ptr, png_color *palette,
    if (full_quantize == 0)
    {
       int i;
+      png_alloc_size_t index_size;
 
       /* Initialize the array to index colors.
        *
-       * Ensure quantize_index can fit 256 elements (PNG_MAX_PALETTE_LENGTH)
-       * rather than num_palette elements. This is to prevent buffer overflows
-       * caused by malformed PNG files with out-of-range palette indices.
+       * The pixel loop reads indices 0..255, so at least
+       * PNG_MAX_PALETTE_LENGTH elements are needed, but the reduction code
+       * below also indexes quantize_index with input palette entries, so
+       * size it for the larger of the two.
        *
        * Be careful to avoid leaking memory. Applications are allowed to call
        * this function more than once per png_struct.
        */
+      index_size = PNG_MAX_PALETTE_LENGTH;
+      if (num_palette > PNG_MAX_PALETTE_LENGTH)
+         index_size = (png_alloc_size_t)num_palette;
       png_free(png_ptr, png_ptr->quantize_index);
       png_ptr->quantize_index = NULL;
-      png_ptr->quantize_index = (png_byte *)png_malloc(png_ptr,
-          PNG_MAX_PALETTE_LENGTH);
-      for (i = 0; i < PNG_MAX_PALETTE_LENGTH; i++)
+      png_ptr->quantize_index = (png_byte *)png_malloc(png_ptr, index_size);
+      for (i = 0; i < (int)index_size; i++)
          png_ptr->quantize_index[i] = (png_byte)i;
    }
 

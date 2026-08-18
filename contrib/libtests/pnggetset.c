@@ -773,36 +773,26 @@ test_plte_palette_sync(void)
    return 0;
 }
 
-/* Test: out-of-range palette counts passed to png_set_quantize must not
- * cause an out-of-bounds access into the internally sized palette buffers.
- * This reproduces the heap buffer overflow that occurred when num_palette
- * exceeded PNG_MAX_PALETTE_LENGTH or was non-positive, or when
- * maximum_colors was non-positive.  A valid call must be accepted.
+/* Test: png_set_quantize must accept a palette that is larger than
+ * maximum_colors (it is reduced to fit), must reject invalid counts with an
+ * application error, and must not access its internally sized buffers out of
+ * bounds.
  */
 #ifdef PNG_READ_QUANTIZE_SUPPORTED
-static int quantize_warning_count;
-
-static void PNGAPI
-count_quantize_warning(png_structp png_ptr, png_const_charp warning_message)
-{
-   (void)png_ptr;
-   (void)warning_message;
-   quantize_warning_count++;
-}
-
 static int
 test_quantize_palette_length_case(const char *what, int num_palette,
-    int maximum_colors, png_error_ptr warning_fn)
+    int maximum_colors, const png_uint_16 *histogram, int expect_error)
 {
    png_structp png_ptr;
    png_infop info_ptr;
    png_color palette[PNG_MAX_PALETTE_LENGTH + 1];
    int i;
+   volatile int error_seen = 0;
 
-   /* Initialize one entry beyond the PNG maximum so that an over-sized
-    * num_palette copy never reads past the test's own buffer.
+   /* Initialize one entry beyond the PNG maximum so that a larger-than-max
+    * palette never reads past the test's own buffer.
     */
-   for (i = 0; i < (int)PNG_MAX_PALETTE_LENGTH + 1; i++)
+   for (i = 0; i < PNG_MAX_PALETTE_LENGTH + 1; i++)
    {
       palette[i].red   = (png_byte)i;
       palette[i].green = (png_byte)(i >> 1);
@@ -824,14 +814,23 @@ test_quantize_palette_length_case(const char *what, int num_palette,
    }
    if (setjmp(png_jmpbuf(png_ptr)))
    {
-      fprintf(stderr, "pnggetset: libpng error in %s\n", what);
+      error_seen = 1;
       png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+   }
+   else
+   {
+      png_set_quantize(png_ptr, palette, num_palette, maximum_colors,
+          histogram, 0);
+      png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
+   }
+
+   if (error_seen != expect_error)
+   {
+      fprintf(stderr, "pnggetset: %s: expected %s, got %s\n", what,
+          expect_error ? "an error" : "no error",
+          error_seen ? "an error" : "no error");
       return 1;
    }
-   if (warning_fn != NULL)
-      png_set_error_fn(png_ptr, NULL, NULL, warning_fn);
-   png_set_quantize(png_ptr, palette, num_palette, maximum_colors, NULL, 0);
-   png_destroy_read_struct(&png_ptr, &info_ptr, NULL);
 
    return 0;
 }
@@ -839,35 +838,44 @@ test_quantize_palette_length_case(const char *what, int num_palette,
 static int
 test_quantize_palette_length(void)
 {
-   if (test_quantize_palette_length_case("oversized palette",
-       (int)PNG_MAX_PALETTE_LENGTH + 1, (int)PNG_MAX_PALETTE_LENGTH + 1,
-       NULL) != 0)
+   png_uint_16 histogram[PNG_MAX_PALETTE_LENGTH + 1];
+   int i;
+
+   for (i = 0; i < PNG_MAX_PALETTE_LENGTH + 1; i++)
+      histogram[i] = (png_uint_16)(PNG_MAX_PALETTE_LENGTH + 1 - i);
+
+   /* Valid calls, including a palette larger than maximum_colors, which is
+    * reduced to fit. */
+   if (test_quantize_palette_length_case("valid palette", 4, 4, NULL, 0) != 0)
+      return 1;
+   if (test_quantize_palette_length_case("boundary palette",
+       PNG_MAX_PALETTE_LENGTH, PNG_MAX_PALETTE_LENGTH, NULL, 0) != 0)
+      return 1;
+   if (test_quantize_palette_length_case("oversized input palette",
+       PNG_MAX_PALETTE_LENGTH + 1, PNG_MAX_PALETTE_LENGTH,
+       NULL, 0) != 0)
+      return 1;
+   if (test_quantize_palette_length_case("oversized input palette, histogram",
+       PNG_MAX_PALETTE_LENGTH + 1, PNG_MAX_PALETTE_LENGTH,
+       histogram, 0) != 0)
       return 1;
 
-   if (test_quantize_palette_length_case("negative palette",
-       -1, (int)PNG_MAX_PALETTE_LENGTH, NULL) != 0)
-      return 1;
-
-   if (test_quantize_palette_length_case("negative maximum colors",
-       (int)PNG_MAX_PALETTE_LENGTH, -1, NULL) != 0)
-      return 1;
-
+   /* Invalid calls must raise an application error. */
    if (test_quantize_palette_length_case("zero palette",
-       0, (int)PNG_MAX_PALETTE_LENGTH, NULL) != 0)
+       0, PNG_MAX_PALETTE_LENGTH, NULL, 1) != 0)
       return 1;
-
-   /* A valid call must be accepted without any warning. */
-   quantize_warning_count = 0;
-   if (test_quantize_palette_length_case("valid palette", 4, 4,
-       count_quantize_warning) != 0)
+   if (test_quantize_palette_length_case("negative palette",
+       -1, PNG_MAX_PALETTE_LENGTH, NULL, 1) != 0)
       return 1;
-   if (quantize_warning_count != 0)
-   {
-      fprintf(stderr,
-          "pnggetset: valid png_set_quantize call generated %d warning(s)\n",
-          quantize_warning_count);
+   if (test_quantize_palette_length_case("negative maximum colors",
+       PNG_MAX_PALETTE_LENGTH, -1, NULL, 1) != 0)
       return 1;
-   }
+   if (test_quantize_palette_length_case("zero maximum colors",
+       4, 0, NULL, 1) != 0)
+      return 1;
+   if (test_quantize_palette_length_case("oversized maximum colors",
+       4, PNG_MAX_PALETTE_LENGTH + 1, NULL, 1) != 0)
+      return 1;
 
    return 0;
 }
