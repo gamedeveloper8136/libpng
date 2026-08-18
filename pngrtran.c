@@ -503,10 +503,13 @@ png_set_quantize(png_struct *png_ptr, png_color *palette,
 
       /* Initialize the array to index colors.
        *
-       * The pixel loop reads indices 0..255, so at least
-       * PNG_MAX_PALETTE_LENGTH elements are needed, but the reduction code
-       * below also indexes quantize_index with input palette entries, so
-       * size it for the larger of the two.
+       * quantize_index serves two readers: the pixel loop in
+       * png_do_quantize reads indices 0..255 (an 8-bit palette index from
+       * the image data, which can exceed num_palette in a malformed file),
+       * so the array must hold at least PNG_MAX_PALETTE_LENGTH entries;
+       * and the reduction code below indexes it with input palette entries,
+       * so it must also hold at least num_palette entries.  Size it for the
+       * larger of the two.
        *
        * Be careful to avoid leaking memory. Applications are allowed to call
        * this function more than once per png_struct.
