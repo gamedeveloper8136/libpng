@@ -844,20 +844,18 @@ test_quantize_palette_length(void)
    for (i = 0; i < PNG_MAX_PALETTE_LENGTH + 1; i++)
       histogram[i] = (png_uint_16)(PNG_MAX_PALETTE_LENGTH + 1 - i);
 
-   /* Valid calls, including a palette larger than maximum_colors, which is
-    * reduced to fit. */
+   /* Valid calls, including a palette larger than maximum_colors (reduced to fit),
+    * provided both counts are within PNG_MAX_PALETTE_LENGTH. */
    if (test_quantize_palette_length_case("valid palette", 4, 4, NULL, 0) != 0)
       return 1;
    if (test_quantize_palette_length_case("boundary palette",
        PNG_MAX_PALETTE_LENGTH, PNG_MAX_PALETTE_LENGTH, NULL, 0) != 0)
       return 1;
-   if (test_quantize_palette_length_case("oversized input palette",
-       PNG_MAX_PALETTE_LENGTH + 1, PNG_MAX_PALETTE_LENGTH,
-       NULL, 0) != 0)
+   if (test_quantize_palette_length_case("valid reduction palette",
+       PNG_MAX_PALETTE_LENGTH, 128, NULL, 0) != 0)
       return 1;
-   if (test_quantize_palette_length_case("oversized input palette, histogram",
-       PNG_MAX_PALETTE_LENGTH + 1, PNG_MAX_PALETTE_LENGTH,
-       histogram, 0) != 0)
+   if (test_quantize_palette_length_case("valid reduction palette, histogram",
+       PNG_MAX_PALETTE_LENGTH, 128, histogram, 0) != 0)
       return 1;
 
    /* Invalid calls must raise an application error. */
@@ -866,6 +864,9 @@ test_quantize_palette_length(void)
       return 1;
    if (test_quantize_palette_length_case("negative palette",
        -1, PNG_MAX_PALETTE_LENGTH, NULL, 1) != 0)
+      return 1;
+   if (test_quantize_palette_length_case("oversized input palette",
+       PNG_MAX_PALETTE_LENGTH + 1, PNG_MAX_PALETTE_LENGTH, NULL, 1) != 0)
       return 1;
    if (test_quantize_palette_length_case("negative maximum colors",
        PNG_MAX_PALETTE_LENGTH, -1, NULL, 1) != 0)
